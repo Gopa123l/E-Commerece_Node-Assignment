@@ -36,6 +36,8 @@ exports.signup = async (req) => {
         });
         const accessToken = jwt.sign({ email: result.email, id: result._id }, process.env.SECRET_KEY, { expiresIn: '1h' });
         const refreshToken = jwt.sign({ email: result.email, id: result._id }, process.env.REFRESH_TOKEN_SECRET);
+        result.refreshToken= refreshToken;
+        await result.save();
 
         const confirmationUrl = `http://localhost:5004/api/users/confirm/${confirmationToken}`;
 
@@ -88,11 +90,13 @@ exports.signin = async (req) => {
             timeZoneName: 'short'
         };
         const readableLastLoggedIn = now.toLocaleDateString('en-US', options);
-        existingUser.lastLoggedIn= readableLastLoggedIn
+        existingUser.lastLoggedIn= readableLastLoggedIn;
         await existingUser.save();
 
         const accessToken = jwt.sign({ email: existingUser.email, id: existingUser._id }, process.env.SECRET_KEY, { expiresIn: '1h' });
         const refreshToken = jwt.sign({ email: existingUser.email, id: existingUser._id }, process.env.REFRESH_TOKEN_SECRET);
+        existingUser.refreshToken=refreshToken;
+        await existingUser.save();
 
         return ({
             status: true,
@@ -107,6 +111,41 @@ exports.signin = async (req) => {
         return { status: false, code: 500, msg: { msg: error.message } }
     }
 }
+
+exports.signout = async (req) => {
+    try {
+        const { email, refreshToken } = req.body;
+        if (!email || !refreshToken) {
+            return { status: false, code: 400, msg: 'Please provide email and refresh token.' };
+        }
+        const existingUser = await userModel.findOne({ email: email });
+        if (!existingUser) {
+            return { status: false, code: 400, msg: 'User not found.' };
+        }
+        if (existingUser.refreshToken !== refreshToken) {
+            return { status: false, code: 400, msg: 'Invalid refresh token.' };
+        }
+        existingUser.refreshToken = null;
+        await existingUser.save();
+        const now= new Date()
+        const options = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            timeZoneName: 'short'
+        };
+        const readableLastLoggedOut = now.toLocaleDateString('en-US', options);
+        existingUser.lastLoggedOut= readableLastLoggedOut;
+        await existingUser.save();
+        return { status: true, msg: 'User signed out successfully.' };
+    } catch (error) {
+        console.log(error);
+        return { status: false, code: 500, msg: { msg: error.message } };
+    }
+};
 
 exports.confirmEmail = async (req) => {
     try {
